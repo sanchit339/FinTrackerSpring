@@ -10,6 +10,7 @@ import com.google.auth.oauth2.AccessToken;
 import com.google.auth.oauth2.GoogleCredentials;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.time.LocalDate;
 import java.util.*;
 
@@ -26,7 +27,7 @@ public class GmailService {
                 .setApplicationName("FinTracker").build();
     }
 
-    public List<Message> fetchEmailsSince(String accessToken, String userId, String sinceDate, int maxResults) throws Exception{
+    public List<String> fetchEmailsSince(String accessToken, String userId, String sinceDate, int maxResults) throws Exception{
         try {
             Gmail gmail = this.buildGmailClient(accessToken);
 
@@ -43,8 +44,21 @@ public class GmailService {
 
             List<Message> messages = response.getMessages();
             if(messages == null) return new ArrayList<>();
-            return messages;
-//            messages.forEach();
+
+            List<String> emails = new ArrayList<>();
+
+            messages.forEach(e -> {
+                try {
+                    Message message = gmail.users().messages().get(userId, e.getId()).setFormat("full").execute();
+
+                    String emailBody = String.valueOf(message.getPayload());
+                    emails.add(emailBody);
+                } catch (IOException ex) {
+                    throw new RuntimeException(ex);
+                }
+            });
+
+            return emails;
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
