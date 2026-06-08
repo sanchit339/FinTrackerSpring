@@ -1,6 +1,7 @@
 package com.transactions.gmailtracker.controller;
 
 
+import com.transactions.gmailtracker.dto.TransactionDTO;
 import com.transactions.gmailtracker.service.GmailService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.MessageSource;
@@ -33,9 +34,16 @@ public class EmailController {
             OAuth2AuthorizedClient client = oAuth2AuthorizedClientService.loadAuthorizedClient("google", authentication.getName());
             String accessToken = client.getAccessToken().getTokenValue();
 
-            List<String> emails = gmailService.fetchEmailsSince(accessToken, userIdStr, "2026-05-02", 20);
+            long start = System.currentTimeMillis();
 
-            emails.forEach(e -> System.out.println(e));
+            List<TransactionDTO> emails = gmailService.fetchEmailsSince(accessToken, userIdStr, "2026-05-02", 20);
+
+
+            emails.forEach(e ->  {
+                System.out.println(e);
+            });
+
+            System.out.println("Total time taken : - " + (System.currentTimeMillis() -  start));
 
         } catch (Exception e) {
             System.out.println(e);
