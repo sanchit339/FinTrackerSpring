@@ -10,6 +10,8 @@ import com.google.auth.http.HttpCredentialsAdapter;
 import com.google.auth.oauth2.AccessToken;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.transactions.gmailtracker.dto.TransactionDTO;
+import com.transactions.gmailtracker.repository.TransactionRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -25,6 +27,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class GmailService {
+    @Autowired
+    private TransactionRepository transactionRepository;
 
     private Gmail buildGmailClient(String accessToken) throws Exception{
         GoogleCredentials credentials = GoogleCredentials.create(new AccessToken(accessToken, null));
@@ -79,6 +83,7 @@ public class GmailService {
                     })
                     .collect(Collectors.toList());
 
+            transactionRepository.saveAll(emails);
             return emails;
         } catch (Exception e) {
             throw new RuntimeException(e);
