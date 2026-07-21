@@ -36,8 +36,7 @@ public class EmailController {
 
             long start = System.currentTimeMillis();
 
-            List<TransactionDTO> emails = gmailService.fetchEmailsSince(accessToken, userIdStr, "2026-05-02", 20);
-
+            List<TransactionDTO> emails = gmailService.fetchEmailsSince(accessToken, userIdStr, "2026-07-02", 20);
 
             emails.forEach(e ->  {
                 System.out.println(e);
@@ -50,4 +49,5 @@ public class EmailController {
         }
         return null;
     }
+
 }

@@ -10,7 +10,10 @@ import com.google.auth.http.HttpCredentialsAdapter;
 import com.google.auth.oauth2.AccessToken;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.transactions.gmailtracker.dto.TransactionDTO;
+import com.transactions.gmailtracker.entity.EmailData;
+import com.transactions.gmailtracker.mapper.TransactionMapper;
 import com.transactions.gmailtracker.repository.TransactionRepository;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -21,14 +24,23 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+
+@Slf4j
 @Service
 public class GmailService {
     @Autowired
     private TransactionRepository transactionRepository;
+    @Autowired
+    private TransactionMapper transactionMapper;
+
+    private final ExecutorService gmailExecutor = Executors.newFixedThreadPool(10);
 
     private Gmail buildGmailClient(String accessToken) throws Exception{
         GoogleCredentials credentials = GoogleCredentials.create(new AccessToken(accessToken, null));
@@ -44,48 +56,60 @@ public class GmailService {
     public List<TransactionDTO> fetchEmailsSince(String accessToken, String userId, String sinceDate, int maxResults) throws Exception{
         try {
             Gmail gmail = this.buildGmailClient(accessToken);
-
             LocalDate adjustDate = LocalDate.parse(sinceDate).minusDays(1);
-            String dateStr = adjustDate.toString().replace("-" , "/");
+            String dateStr = adjustDate.toString().replace("-", "/");
 
-            String query = "from:alerts@hdfcbank.bank.in after:"+dateStr;
+            String query = "from:alerts@hdfcbank.bank.in after:" + dateStr;
 
             ListMessagesResponse response = gmail.users().messages()
                     .list("me")
                     .setQ(query)
                     .setMaxResults((long) maxResults)
                     .execute();
-
             List<Message> messages = response.getMessages();
-            if(messages == null) return new ArrayList<>();
+            if (messages == null) return new ArrayList<>();
 
-            List<TransactionDTO> emails = messages.parallelStream()
-                    .map(e -> {
-                        try {
-                            Message message = gmail.users().messages()
-                                    .get(userId, e.getId())
-                                    .setFormat("full")
-                                    .execute();
+            //replaced the parallel-stream to stream to avoid 429 in the free tier
+            List<TransactionDTO> emails = messages.stream()
+                    .map(e -> CompletableFuture.supplyAsync(() -> {
+                                try {
+                                    Message message = gmail.users().messages()
+                                            .get(userId, e.getId())
+                                            .setFormat("full")
+                                            .execute();
 
-                            Instant receivedAt = Instant.ofEpochMilli(message.getInternalDate());
+                                    Instant receivedAt = Instant.ofEpochMilli(message.getInternalDate());
 
-                            String time = receivedAt.atZone(ZoneId.of("Asia/Kolkata"))
-                                    .format(DateTimeFormatter.ofPattern("hh:mm a", Locale.ENGLISH));
+                                    String time = receivedAt.atZone(ZoneId.of("Asia/Kolkata"))
+                                            .format(DateTimeFormatter.ofPattern("hh:mm a", Locale.ENGLISH));
+                                    System.out.println(time);
+                                    return parseTransaction(extractBody(message.getPayload()), time);
+                                } catch (IOException ex) {
+                                    log.error("Failed to fetch message ID: " + e.getId(), ex);
+                                    return null;
+                                }
+                            }, gmailExecutor))
 
-                            TransactionDTO emailDataDTO = parseTransaction(extractBody(message.getPayload()), time);
+                            .collect(Collectors.collectingAndThen(
+                                    Collectors.toList(),
+                                    emailList-> emailList.stream()
+                                            .map(CompletableFuture::join)
+                                            .filter(Objects::nonNull)
+                                            .collect(Collectors.toList())
 
-//                            parsed.put("time", time);
+                            ));
+            gmailExecutor.shutdown();
 
-                            return emailDataDTO;
-                        } catch (IOException ex) {
-                            throw new RuntimeException(ex);
-                        }
-                    })
+            List<EmailData> entities;
+
+            entities = emails.stream()
+                    .map(transactionMapper::toEntity)
                     .collect(Collectors.toList());
-
-            transactionRepository.saveAll(emails);
+            System.out.println("Hello from here ");
+            transactionRepository.saveAll(entities);
             return emails;
         } catch (Exception e) {
+            log.error("Runtime Error  : {}", e.toString());
             throw new RuntimeException(e);
         }
     }
@@ -142,14 +166,12 @@ public class GmailService {
 
         // Date
         Matcher date = Pattern.compile("on (\\d{2}-\\d{2}-\\d{2})").matcher(emailBody);
-        if (date.find()) transactionDTO.setDate(null);
+        if (date.find()){
+            LocalDate parsed = LocalDate.parse(date.group(1), DateTimeFormatter.ofPattern("dd-MM-yy"));
+            transactionDTO.setDate(parsed);
+        }
 
         transactionDTO.setTime(time);
-
-//        // UPI ref
-//        Matcher ref = Pattern.compile("reference no\\.:\\s*(\\d+)").matcher(emailBody);
-//        if (ref.find()) result.put("upiRef", ref.group(1));
-
         return transactionDTO;
     }
 }

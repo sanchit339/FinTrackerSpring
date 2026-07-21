@@ -15,7 +15,8 @@ public class TransactionService {
 
     public TransactionResponseDTO getTransaction(){
 
-        return transactionResponseDTO;
+//        return transactionResponseDTO;
+        return  null;
     }
 
 }
