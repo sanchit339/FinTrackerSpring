@@ -98,7 +98,6 @@ public class GmailService {
                                             .collect(Collectors.toList())
 
                             ));
-            gmailExecutor.shutdown();
 
             List<EmailData> entities;
 
