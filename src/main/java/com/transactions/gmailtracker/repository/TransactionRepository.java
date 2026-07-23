@@ -6,5 +6,5 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface TransactionRepository extends JpaRepository<EmailData, Long>{
-    Page<EmailData> findAllByOrderByDateDesc(Pageable pageable);
+    Page<EmailData> findAllByOrderByTransactionTimeDesc(Pageable pageable);
 }

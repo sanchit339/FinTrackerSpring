@@ -1,11 +1,17 @@
 package com.transactions.gmailtracker.entity;
 
 import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
-import java.util.Date;
+import java.time.LocalDateTime;
 
 @Entity
-@Table( name = "emails")
+@Table(name = "emails")
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
 public class EmailData {
     @Id
     @GeneratedValue
@@ -17,8 +23,12 @@ public class EmailData {
     @Column(name = "upi_id")
     private String upiId;
     private String recipient;
-    private Date date;
+
+    @Column(name = "transaction_time")
+    private LocalDateTime transactionTime;
 
     @Column(name = "bank_acc")
     private String bankAcc;
+
+    private String type;
 }

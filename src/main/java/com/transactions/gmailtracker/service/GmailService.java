@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -79,11 +80,11 @@ public class GmailService {
                                             .execute();
 
                                     Instant receivedAt = Instant.ofEpochMilli(message.getInternalDate());
-
-                                    String time = receivedAt.atZone(ZoneId.of("Asia/Kolkata"))
-                                            .format(DateTimeFormatter.ofPattern("hh:mm a", Locale.ENGLISH));
-                                    System.out.println(time);
-                                    return parseTransaction(extractBody(message.getPayload()), time);
+                                    // Gmail received time in IST — this is the transaction time we persist
+                                    var transactionTime = receivedAt
+                                            .atZone(ZoneId.of("Asia/Kolkata"))
+                                            .toLocalDateTime();
+                                    return parseTransaction(extractBody(message.getPayload()), transactionTime);
                                 } catch (IOException ex) {
                                     log.error("Failed to fetch message ID: " + e.getId(), ex);
                                     return null;
@@ -104,7 +105,7 @@ public class GmailService {
             entities = emails.stream()
                     .map(transactionMapper::toEntity)
                     .collect(Collectors.toList());
-            System.out.println("Hello from here ");
+
             transactionRepository.saveAll(entities);
             return emails;
         } catch (Exception e) {
@@ -144,12 +145,12 @@ public class GmailService {
                 .trim();
     }
 
-    public TransactionDTO parseTransaction(String emailBody, String time) {
+    public TransactionDTO parseTransaction(String emailBody, LocalDateTime transactionTime) {
         TransactionDTO transactionDTO = new TransactionDTO();
 
         // Amount
         Matcher amount = Pattern.compile("Rs\\.([\\d,]+\\.\\d{2})").matcher(emailBody);
-        if (amount.find()) transactionDTO.setAmount(Double.valueOf(amount.group(1)));
+        if (amount.find()) transactionDTO.setAmount(Double.valueOf(amount.group(1).replace(",", "")));
 
         // Account ending
         Matcher account = Pattern.compile("account ending (\\d+)").matcher(emailBody);
@@ -163,14 +164,21 @@ public class GmailService {
         Matcher name = Pattern.compile("\\(([A-Z ]+)\\)").matcher(emailBody);
         if (name.find()) transactionDTO.setRecipient(name.group(1));
 
-        // Date
-        Matcher date = Pattern.compile("on (\\d{2}-\\d{2}-\\d{2})").matcher(emailBody);
-        if (date.find()){
-            LocalDate parsed = LocalDate.parse(date.group(1), DateTimeFormatter.ofPattern("dd-MM-yy"));
-            transactionDTO.setDate(parsed);
+        // Type of Transaction: CREDIT / DEBIT (from email body words)
+        Matcher type = Pattern.compile("(?i)\\b(credited|debited)\\b").matcher(emailBody);
+        if (type.find()) {
+            String matched = type.group(1).toLowerCase(Locale.ENGLISH);
+            transactionDTO.setType(matched.equals("credited") ? "CREDIT" : "DEBIT");
         }
 
-        transactionDTO.setTime(time);
+        // Transaction time comes from Gmail message (not email body text)
+        if (transactionTime != null) {
+            transactionDTO.setTransactionTime(transactionTime);
+            transactionDTO.setDate(transactionTime.toLocalDate());
+            transactionDTO.setTime(transactionTime.format(
+                    DateTimeFormatter.ofPattern("hh:mm a", Locale.ENGLISH)));
+        }
+
         return transactionDTO;
     }
 }

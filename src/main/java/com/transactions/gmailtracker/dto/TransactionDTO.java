@@ -6,7 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
-import java.util.Date;
+import java.time.LocalDateTime;
 
 @NoArgsConstructor
 @AllArgsConstructor
@@ -20,5 +20,7 @@ public class TransactionDTO {
     private LocalDate date;
     private String bankAcc;
     private String time;
+    private LocalDateTime transactionTime;
     private String categoryName;
+    private String type;
 }

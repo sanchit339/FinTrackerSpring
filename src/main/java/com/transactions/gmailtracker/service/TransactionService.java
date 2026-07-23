@@ -33,7 +33,7 @@ public class TransactionService {
     private final TransactionMapper transactionMapper;
 
     public TransactionResponseDTO getRecentTransaction(int limit, int offset){
-        Pageable pagable = PageRequest.of(offset / limit, limit, Sort.by(Sort.Direction.DESC,"date"));
+        Pageable pagable = PageRequest.of(offset / limit, limit, Sort.by(Sort.Direction.DESC, "transactionTime"));
         Page<EmailData> page = transactionRepository.findAll(pagable);
 
         List<TransactionDTO> transactionDTOS = page.getContent().stream()
