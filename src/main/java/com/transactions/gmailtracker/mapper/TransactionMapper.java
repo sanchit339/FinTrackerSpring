@@ -1,7 +1,9 @@
 package com.transactions.gmailtracker.mapper;
 
+import com.transactions.gmailtracker.dto.MonthlySummaryDTO;
 import com.transactions.gmailtracker.dto.TransactionDTO;
 import com.transactions.gmailtracker.entity.EmailData;
+import com.transactions.gmailtracker.entity.MonthlySummary;
 import org.mapstruct.AfterMapping;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
@@ -32,4 +34,6 @@ public interface TransactionMapper {
         dto.date(transactionTime.toLocalDate());
         dto.time(transactionTime.format(DateTimeFormatter.ofPattern("hh:mm a", Locale.ENGLISH)));
     }
+
+    MonthlySummary toEntity(MonthlySummaryDTO monthlySummaryDTO);
 }

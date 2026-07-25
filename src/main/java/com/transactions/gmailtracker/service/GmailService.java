@@ -54,10 +54,10 @@ public class GmailService {
                 .setApplicationName("FinTracker").build();
     }
 
-    public List<TransactionDTO> fetchEmailsSince(String accessToken, String userId, String sinceDate, int maxResults) throws Exception{
+    public List<TransactionDTO> fetchEmailsSince(String accessToken, String userId, LocalDate sinceDate, int maxResults) throws Exception{
         try {
             Gmail gmail = this.buildGmailClient(accessToken);
-            LocalDate adjustDate = LocalDate.parse(sinceDate).minusDays(1);
+            LocalDate adjustDate = sinceDate.minusDays(1);
             String dateStr = adjustDate.toString().replace("-", "/");
 
             String query = "from:alerts@hdfcbank.bank.in after:" + dateStr;
@@ -146,39 +146,137 @@ public class GmailService {
     }
 
     public TransactionDTO parseTransaction(String emailBody, LocalDateTime transactionTime) {
+        return parseTransaction(emailBody, null, transactionTime);
+    }
+
+    public TransactionDTO parseTransaction(String emailBody, String subject, LocalDateTime transactionTime) {
         TransactionDTO transactionDTO = new TransactionDTO();
+        if (emailBody == null || emailBody.isBlank()) {
+            return transactionDTO;
+        }
+        if (subject == null) subject = "";
 
-        // Amount
-        Matcher amount = Pattern.compile("Rs\\.([\\d,]+\\.\\d{2})").matcher(emailBody);
-        if (amount.find()) transactionDTO.setAmount(Double.valueOf(amount.group(1).replace(",", "")));
-
-        // Account ending
-        Matcher account = Pattern.compile("account ending (\\d+)").matcher(emailBody);
-        if (account.find()) transactionDTO.setBankAcc(account.group(1));
-
-        // VPA (UPI ID)
-        Matcher vpa = Pattern.compile("towards VPA ([\\w.\\-@]+)").matcher(emailBody);
-        if (vpa.find()) transactionDTO.setUpiId(vpa.group(1));
-
-        // Recipient name
-        Matcher name = Pattern.compile("\\(([A-Z ]+)\\)").matcher(emailBody);
-        if (name.find()) transactionDTO.setRecipient(name.group(1));
-
-        // Type of Transaction: CREDIT / DEBIT (from email body words)
-        Matcher type = Pattern.compile("(?i)\\b(credited|debited)\\b").matcher(emailBody);
-        if (type.find()) {
-            String matched = type.group(1).toLowerCase(Locale.ENGLISH);
-            transactionDTO.setType(matched.equals("credited") ? "CREDIT" : "DEBIT");
+        // ── 1. Amount: Rs. 123.00 | Rs.INR 1,234.56 | Rs 123  (try body then subject) ──
+        //    TS: /Rs\.?\s*(?:INR\s*)?([,\d]+\.?\d*)/i  — note [,\d] comma first
+        Pattern amountPat = Pattern.compile("(?i)Rs\\.?\\s*(?:INR\\s*)?([,\\d]+\\.?\\d*)");
+        Matcher amountMatcher = amountPat.matcher(emailBody);
+        if (!amountMatcher.find()) amountMatcher = amountPat.matcher(subject);
+        if (amountMatcher.find()) {
+            try {
+                transactionDTO.setAmount(Double.parseDouble(amountMatcher.group(1).replace(",", "")));
+            } catch (NumberFormatException ignored) {}
         }
 
-        // Transaction time comes from Gmail message (not email body text)
-        if (transactionTime != null) {
-            transactionDTO.setTransactionTime(transactionTime);
-            transactionDTO.setDate(transactionTime.toLocalDate());
-            transactionDTO.setTime(transactionTime.format(
+        // ── 2. Type: debited | credited | added | withdrawn | deducted (body then subject) ──
+        //    TS: /(debited|credited|added|withdrawn|deducted)/i  — no word-boundary anchors
+        Pattern typePat = Pattern.compile("(?i)(debited|credited|added|withdrawn|deducted)");
+        Matcher typeMatcher = typePat.matcher(emailBody);
+        if (!typeMatcher.find()) typeMatcher = typePat.matcher(subject);
+        if (typeMatcher.find()) {
+            String matched = typeMatcher.group(1).toLowerCase(Locale.ENGLISH);
+            switch (matched) {
+                case "debited": case "withdrawn": case "deducted":
+                    transactionDTO.setType("DEBIT"); break;
+                case "credited": case "added":
+                    transactionDTO.setType("CREDIT"); break;
+            }
+        }
+
+        // ── 3. Account: "account ending 9791" | "account ending in 9791" (body then subject) ──
+        //    TS: /account\s+(?:ending\s+in\s+|ending\s+)?([A-Z0-9*X]+)/i
+        Pattern accountPat = Pattern.compile("(?i)account\\s+(?:ending\\s+in\\s+|ending\\s+)?([A-Z0-9*X]+)");
+        Matcher accountMatcher = accountPat.matcher(emailBody);
+        if (!accountMatcher.find()) accountMatcher = accountPat.matcher(subject);
+        if (accountMatcher.find()) {
+            transactionDTO.setBankAcc(accountMatcher.group(1));
+        }
+
+        // ── 4. Recipient / Sender — TS checks recipient FIRST, then sender ──
+        //    TS recipient: /(?:to|towards)\s+(?:VPA\s+)?(.+?)(?=\s+on\s+\d)/i
+        //    TS sender:    /Sender:\s+([^(\r\n]+?)\s*\(VPA:\s*([^)]+)\)/i
+        Matcher recipientMatcher = Pattern.compile("(?i)(?:to|towards)\\s+(?:VPA\\s+)?(.+?)(?=\\s+on\\s+\\d)")
+                .matcher(emailBody);
+        Matcher senderMatcher = Pattern.compile("(?i)Sender:\\s+([^(\\r\\n]+?)\\s*\\(VPA:\\s*([^)]+)\\)")
+                .matcher(emailBody);
+
+        if (recipientMatcher.find()) {
+            // Debit format: "to/towards VPA gpay@okaxis on 09-01-26"
+            String recipient = recipientMatcher.group(1).trim();
+            transactionDTO.setRecipient(recipient);
+            if (recipient.contains("@")) {
+                transactionDTO.setUpiId(recipient);    // VPA is the recipient string itself
+            }
+        } else if (senderMatcher.find()) {
+            // Credit format: "Sender: JOHN DOE (VPA: john@upi)"
+            String senderName = senderMatcher.group(1).trim();
+            String senderVpa  = senderMatcher.group(2).trim();
+            transactionDTO.setRecipient(senderName);
+            transactionDTO.setUpiId(senderVpa);
+        }
+        // (No parentheses-name fallback in TS — removed to stay aligned)
+
+        // ── 5. Balance: "Avl Bal: Rs. 1,234.56" | "Available balance: Rs 500" ──
+        //    TS: /(?:Avl\s+Bal|Available\s+balance)[:\s]*Rs\.?\s*(?:INR\s*)?([,\d]+\.?\d*)/i
+        Matcher balanceMatcher = Pattern.compile(
+                "(?i)(?:Avl\\s+Bal|Available\\s+balance)[:\\s]*Rs\\.?\\s*(?:INR\\s*)?([,\\d]+\\.?\\d*)")
+                .matcher(emailBody);
+        if (balanceMatcher.find()) {
+            try {
+                // Note: TransactionDTO has no balance field — store in upiId is wrong.
+                // This is captured for parity; wire to a DTO field when you add one.
+                // transactionDTO.setBalance(Double.parseDouble(balanceMatcher.group(1).replace(",", "")));
+            } catch (NumberFormatException ignored) {}
+        }
+
+        // ── 6. Transaction Date — 6 patterns matching TS exactly ──
+        //    TS splits `-` and `/` into separate patterns (6 total):
+        //      on DD-MM-YY(YY), on DD/MM/YY(YY)
+        //      dated? DD-MM-YY(YY), dated? DD/MM/YY(YY)
+        //      [Dd]ate[:\s] DD-MM-YY(YY), [Dd]ate[:\s] DD/MM/YY(YY)
+        String[] dateRegexes = {
+            "(?i)on\\s+(\\d{2})-(\\d{2})-(\\d{2,4})",
+            "(?i)on\\s+(\\d{2})/(\\d{2})/(\\d{2,4})",
+            "(?i)dated?\\s+(\\d{2})-(\\d{2})-(\\d{2,4})",
+            "(?i)dated?\\s+(\\d{2})/(\\d{2})/(\\d{2,4})",
+            "[Dd]ate[:\\s]+(\\d{2})-(\\d{2})-(\\d{2,4})",
+            "[Dd]ate[:\\s]+(\\d{2})/(\\d{2})/(\\d{2,4})"
+        };
+
+        LocalDate bodyDate = null;
+        for (String regex : dateRegexes) {
+            Matcher dateMatcher = Pattern.compile(regex).matcher(emailBody);
+            if (dateMatcher.find()) {
+                try {
+                    int day   = Integer.parseInt(dateMatcher.group(1));
+                    int month = Integer.parseInt(dateMatcher.group(2));
+                    int year  = Integer.parseInt(dateMatcher.group(3));
+                    if (year < 100) {
+                        year = (year < 50) ? 2000 + year : 1900 + year;
+                    }
+                    bodyDate = LocalDate.of(year, month, day);
+                    break;
+                } catch (Exception ignored) {}
+            }
+        }
+
+        // ── 7. Final timestamp — IST-based combination (mirrors TS +05:30 approach) ──
+        //    TS: combines body date with IST time-parts of receivedAt, then parses as +05:30
+        //    Java: transactionTime is already in IST (converted via ZoneId.of("Asia/Kolkata") in fetchEmailsSince)
+        //    So we simply replace the date component with the body date when found.
+        LocalDateTime finalTransactionTime = transactionTime;
+        if (bodyDate != null && transactionTime != null) {
+            finalTransactionTime = LocalDateTime.of(bodyDate, transactionTime.toLocalTime());
+        }
+        // Fallback: use raw Gmail received time (already IST) — mirrors TS fallback to receivedAt
+
+        if (finalTransactionTime != null) {
+            transactionDTO.setTransactionTime(finalTransactionTime);
+            transactionDTO.setDate(finalTransactionTime.toLocalDate());
+            transactionDTO.setTime(finalTransactionTime.format(
                     DateTimeFormatter.ofPattern("hh:mm a", Locale.ENGLISH)));
         }
 
         return transactionDTO;
     }
 }
+

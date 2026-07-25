@@ -11,8 +11,10 @@ import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @RestController
@@ -22,11 +24,13 @@ public class EmailController {
 
     @Autowired
     private OAuth2AuthorizedClientService oAuth2AuthorizedClientService;
-    @Autowired
-    private MessageSource messageSource;
+
 
     @GetMapping("/emails")
-    public ResponseEntity<String> getEmails(Authentication authentication) throws Exception {
+        public ResponseEntity<String> getEmails(Authentication authentication, @RequestParam(required = false) LocalDate date) throws Exception {
+        if(date == null){
+            date = LocalDate.now();
+        }
         try {
             OAuth2User principal = (OAuth2User) authentication.getPrincipal();
             String userIdStr = principal.getAttribute("sub");
@@ -36,11 +40,9 @@ public class EmailController {
 
             long start = System.currentTimeMillis();
 
-            List<TransactionDTO> emails = gmailService.fetchEmailsSince(accessToken, userIdStr, "2026-07-02", 20);
+            List<TransactionDTO> emails = gmailService.fetchEmailsSince(accessToken, userIdStr, date, 20);
 
-            emails.forEach(e ->  {
-                System.out.println(e);
-            });
+            emails.forEach(System.out::println);
 
             System.out.println("Total time taken : - " + (System.currentTimeMillis() -  start));
 
@@ -49,5 +51,7 @@ public class EmailController {
         }
         return null;
     }
+
+
 
 }

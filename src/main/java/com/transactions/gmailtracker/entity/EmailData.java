@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
@@ -18,7 +19,7 @@ public class EmailData {
     @Column(name = "message_id", unique = true, nullable = false)
     private Long messageId;
 
-    private Integer amount;
+    private BigDecimal amount;
 
     @Column(name = "upi_id")
     private String upiId;

@@ -14,4 +14,5 @@ import java.math.BigDecimal;
 public class AggregatesDTO {
     private BigDecimal totalIncome;
     private BigDecimal totalExpenses;
+    private Long totalTransaction;
 }
