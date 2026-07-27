@@ -6,6 +6,7 @@ import com.transactions.gmailtracker.entity.MonthlySummary;
 import com.transactions.gmailtracker.mapper.TransactionMapper;
 import com.transactions.gmailtracker.repository.MonthlySummaryRepository;
 import com.transactions.gmailtracker.repository.TransactionRepository;
+import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -87,5 +88,10 @@ public class TransactionService {
 
         MonthlySummary monthlySummary = transactionMapper.toEntity(monthlySummaryDTO);
         monthlySummaryRepository.save(monthlySummary);
+    }
+
+    public void updateTransactionCategory(long id, int categoryId) {
+        EmailData transaction = transactionRepository.findById(id).orElseThrow(() -> new EntityNotFoundException("Transaction Not found"));
+        transaction.setCategory(categoryId);
     }
 }

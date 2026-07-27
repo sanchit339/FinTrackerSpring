@@ -32,4 +32,7 @@ public class EmailData {
     private String bankAcc;
 
     private String type;
+
+    @Column(name = "category", columnDefinition = "int default 1")
+    private int category;
 }

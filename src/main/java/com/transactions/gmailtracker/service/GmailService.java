@@ -57,8 +57,7 @@ public class GmailService {
     public List<TransactionDTO> fetchEmailsSince(String accessToken, String userId, LocalDate sinceDate, int maxResults) throws Exception{
         try {
             Gmail gmail = this.buildGmailClient(accessToken);
-            LocalDate adjustDate = sinceDate.minusDays(1);
-            String dateStr = adjustDate.toString().replace("-", "/");
+            String dateStr = sinceDate.toString().replace("-", "/");
 
             String query = "from:alerts@hdfcbank.bank.in after:" + dateStr;
 
@@ -156,9 +155,8 @@ public class GmailService {
         }
         if (subject == null) subject = "";
 
-        // ── 1. Amount: Rs. 123.00 | Rs.INR 1,234.56 | Rs 123  (try body then subject) ──
-        //    TS: /Rs\.?\s*(?:INR\s*)?([,\d]+\.?\d*)/i  — note [,\d] comma first
-        Pattern amountPat = Pattern.compile("(?i)Rs\\.?\\s*(?:INR\\s*)?([,\\d]+\\.?\\d*)");
+        // ── 1. Amount: Rs. 123.00 | Rs.INR 1,234.56 | Rs 123 | INR 123 | ₹123 (try body then subject) ──
+        Pattern amountPat = Pattern.compile("(?i)(?:Rs\\.?|INR|₹)\\s*(?:INR\\s*)?([,\\d]+\\.?\\d*)");
         Matcher amountMatcher = amountPat.matcher(emailBody);
         if (!amountMatcher.find()) amountMatcher = amountPat.matcher(subject);
         if (amountMatcher.find()) {
@@ -167,24 +165,22 @@ public class GmailService {
             } catch (NumberFormatException ignored) {}
         }
 
-        // ── 2. Type: debited | credited | added | withdrawn | deducted (body then subject) ──
-        //    TS: /(debited|credited|added|withdrawn|deducted)/i  — no word-boundary anchors
-        Pattern typePat = Pattern.compile("(?i)(debited|credited|added|withdrawn|deducted)");
+        // ── 2. Type: debited | credited | added | withdrawn | deducted | paid | sent | received (body then subject) ──
+        Pattern typePat = Pattern.compile("(?i)(debited|credited|added|withdrawn|deducted|paid|sent|received)");
         Matcher typeMatcher = typePat.matcher(emailBody);
         if (!typeMatcher.find()) typeMatcher = typePat.matcher(subject);
         if (typeMatcher.find()) {
             String matched = typeMatcher.group(1).toLowerCase(Locale.ENGLISH);
             switch (matched) {
-                case "debited": case "withdrawn": case "deducted":
+                case "debited": case "withdrawn": case "deducted": case "paid": case "sent":
                     transactionDTO.setType("DEBIT"); break;
-                case "credited": case "added":
+                case "credited": case "added": case "received":
                     transactionDTO.setType("CREDIT"); break;
             }
         }
 
-        // ── 3. Account: "account ending 9791" | "account ending in 9791" (body then subject) ──
-        //    TS: /account\s+(?:ending\s+in\s+|ending\s+)?([A-Z0-9*X]+)/i
-        Pattern accountPat = Pattern.compile("(?i)account\\s+(?:ending\\s+in\\s+|ending\\s+)?([A-Z0-9*X]+)");
+        // ── 3. Account: "account ending 9791" | "a/c ending in 9791" | "a/c **9791" (body then subject) ──
+        Pattern accountPat = Pattern.compile("(?i)(?:account|a/c)\\s+(?:ending\\s+in\\s+|ending\\s+)?([A-Z0-9*X]+)");
         Matcher accountMatcher = accountPat.matcher(emailBody);
         if (!accountMatcher.find()) accountMatcher = accountPat.matcher(subject);
         if (accountMatcher.find()) {
