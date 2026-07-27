@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
 import java.time.YearMonth;
 
 @Slf4j
@@ -24,5 +25,12 @@ public class MonthlyReportScheduler {
                     month.atDay(1).atStartOfDay(),
                     month.atEndOfMonth()
         );
+
+        transactionService.generateMonthlySummaryCategory(
+                month.atDay(1).atStartOfDay(),
+                month.atEndOfMonth()
+        );
+
+        log.info("Monthly summary generation complete.");
     }
 }

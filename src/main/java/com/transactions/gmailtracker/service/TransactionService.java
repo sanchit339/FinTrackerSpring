@@ -4,6 +4,7 @@ import com.transactions.gmailtracker.dto.*;
 import com.transactions.gmailtracker.entity.EmailData;
 import com.transactions.gmailtracker.entity.MonthlySummary;
 import com.transactions.gmailtracker.mapper.TransactionMapper;
+import com.transactions.gmailtracker.repository.CategorySpendProjection;
 import com.transactions.gmailtracker.repository.MonthlySummaryRepository;
 import com.transactions.gmailtracker.repository.TransactionRepository;
 import jakarta.persistence.EntityNotFoundException;
@@ -21,7 +22,9 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -65,6 +68,11 @@ public class TransactionService {
 
     }
 
+    public void updateTransactionCategory(long id, int categoryId) {
+        EmailData transaction = transactionRepository.findById(id).orElseThrow(() -> new EntityNotFoundException("Transaction Not found"));
+        transaction.setCategory(categoryId);
+    }
+
     public void generateMonthlySummary(LocalDateTime start, LocalDate end) {
         LocalDateTime startDate = start;
         LocalDateTime endDate = end.atTime(23, 59, 57);
@@ -90,8 +98,18 @@ public class TransactionService {
         monthlySummaryRepository.save(monthlySummary);
     }
 
-    public void updateTransactionCategory(long id, int categoryId) {
-        EmailData transaction = transactionRepository.findById(id).orElseThrow(() -> new EntityNotFoundException("Transaction Not found"));
-        transaction.setCategory(categoryId);
+    public void generateMonthlySummaryCategory(LocalDateTime start, LocalDate end){
+        List<CategorySpendProjection> categorySpendSummary = transactionRepository.sumByCategoryAndDateRange("DEBIT", start, end.atTime(23, 59, 57));
+        YearMonth currentMonth = YearMonth.from(start);
+        MonthlySummary monthlySummary = monthlySummaryRepository.findByYearMonth(currentMonth).orElseThrow(() -> new EntityNotFoundException("Monthly Summary Not for this <month>"));
+
+        Map<Integer, BigDecimal> categorySpendingMap = new HashMap<>();
+        for(CategorySpendProjection projection : categorySpendSummary){
+            categorySpendingMap.put(projection.getCategory(), projection.getTotalSpent());
+        }
+
+        monthlySummary.setCategorySpendings(categorySpendingMap);
+        monthlySummaryRepository.save(monthlySummary);
     }
+
 }

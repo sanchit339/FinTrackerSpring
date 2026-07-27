@@ -9,6 +9,7 @@ import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
+import java.util.Map;
 
 @Data
 @NoArgsConstructor
@@ -20,4 +21,5 @@ public class MonthlySummaryDTO {
     private  BigDecimal totalSpent;
     private Long transactionCount;
     private LocalDateTime lastComputeTime;
+    private Map<Integer, BigDecimal> categorySpendings;
 }
